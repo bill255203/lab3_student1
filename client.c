@@ -88,6 +88,7 @@ int main() {
     exit(1);
   }
   Segment segment;
+  char buffer[1032];
   while (1) {
     recv(socket_fd, (void *)&segment, sizeof(segment), 0);
     // get the real checksum
@@ -96,14 +97,14 @@ int main() {
     uint16_t real_checksum = (byte16 << 8) | byte17;
     printf("real check: %d\n", real_checksum);
     // create a buffer to store and calculate checksum
-    char buffer[1032];
-    memcpy(buffer, segment.header, sizeof(segment.header));
-    memcpy(buffer + sizeof(segment.header), segment.pseudoheader,
-           sizeof(segment.pseudoheader));
-    memcpy(buffer + sizeof(segment.header) + sizeof(segment.pseudoheader),
-           segment.payload, segment.p_len);
-    uint16_t checksum = mychecksum(buffer, sizeof(buffer));
-    printf("calculated checksum : %d\n", checksum);
+
+    // memcpy(buffer, segment.header, sizeof(segment.header));
+    // memcpy(buffer + sizeof(segment.header), segment.pseudoheader,
+    //        sizeof(segment.pseudoheader));
+    // memcpy(buffer + sizeof(segment.header) + sizeof(segment.pseudoheader),
+    //        segment.payload, segment.p_len);
+    // uint16_t checksum = mychecksum(buffer, sizeof(buffer));
+    // printf("calculated checksum : %d\n", checksum);
     // get sequence number
     uint8_t byte4 = segment.header[4];
     uint8_t byte5 = segment.header[5];
@@ -112,11 +113,11 @@ int main() {
     uint32_t seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
     // Add 1000 to the sequence number
     seq_num += 1000;
-    char header[20];
+    char head[20];
     printf("seq_num: %d\n", seq_num);
-    myheadercreater(header, 124, seq_num, ACK, source_port);
+    myheadercreater(head, 124, seq_num, ACK, source_port);
     // send only the header back
-    send(socket_fd, (void *)header, sizeof(header), 0);
+    send(socket_fd, (void *)head, sizeof(head), 0);
   }
 
   fclose(file);

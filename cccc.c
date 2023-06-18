@@ -10,7 +10,6 @@ void myheadercreater(char *header, uint32_t seq, uint32_t ack, uint8_t flag,
   uint8_t byte3 = dest_port;
   header[2] = byte2;
   header[3] = byte3;
-
   uint8_t byte4 = seq >> 24;
   uint8_t byte5 = seq >> 16;
   uint8_t byte6 = seq >> 8;
@@ -19,7 +18,6 @@ void myheadercreater(char *header, uint32_t seq, uint32_t ack, uint8_t flag,
   header[5] = byte5;
   header[6] = byte6;
   header[7] = byte7;
-
   uint8_t byte8 = ack >> 24;
   uint8_t byte9 = ack >> 16;
   uint8_t byte10 = ack >> 8;
@@ -30,7 +28,6 @@ void myheadercreater(char *header, uint32_t seq, uint32_t ack, uint8_t flag,
   header[11] = byte11;
   header[12] = 0x50;
   header[13] = flag;
-
   uint16_t win = 65535;
   uint8_t byte14 = win >> 8;
   uint8_t byte15 = win;
@@ -90,70 +87,54 @@ int main() {
     perror("Fail to open");
     exit(1);
   }
-  float corruption_probability = 0.3;
-
-  Segment segment;
-  uint32_t expected_seq = 0;
+  // TASK 2 HERE---------------------------------------------------------
   while (1) {
-    // Receive a segment
-    recv(socket_fd, (void *)&segment, sizeof(segment), 0);
+    char packet[1020]; // Buffer to hold the received packet (header + payload)
+    int bytes_received = recv(socket_fd, packet, sizeof(packet), 0);
+    if (bytes_received == -1) {
+      perror("recv failed");
+      exit(1);
+    }
+    char header[20];
+    char payload[1000];
+    int payload_length = bytes_received - sizeof(header);
+    if (bytes_received >= 20) {
+      memcpy(header, packet, sizeof(header));
+      memcpy(payload, packet + sizeof(header), bytes_received - sizeof(header));
+    }
+    // get the real checksum
+    uint8_t byte16 = header[16] & 0xFF;
+    uint8_t byte17 = header[17] & 0xFF;
+    uint16_t real_checksum = (byte16 << 8) | byte17;
+    printf("real check: %d\n", real_checksum);
 
-    // Calculate checksum and verify integrity
-    uint16_t received_checksum = ntohs(segment.l4info.CheckSum);
-    segment.l4info.CheckSum =
-        0; // Set checksum field to 0 for checksum calculation
-    uint16_t calculated_checksum =
-        mychecksum((char *)&segment, sizeof(segment));
-    printf("Calculated checksum: %d\n", calculated_checksum);
-    // // Introduce corruption based on the corruption probability
-    // float random_number =
-    //     (float)rand() / RAND_MAX; // Generate a random number between 0 and 1
-    // if (random_number < corruption_probability ||
-    //     received_checksum != calculated_checksum) {
-    //   // Discard the segment or request retransmission
+    // create a buffer to store and calculate checksum
+    // char buffer[1032];
+    // memcpy(buffer, header, 20); // Copy the 20-byte header
+    // memcpy(buffer + 20, pseudoheader,
+    //        sizeof(pseudoheader)); // Copy the pseudoheader
+    // memcpy(buffer + 20 + sizeof(pseudoheader), payload,
+    //        payload_length); // Copy the payload
+    // uint16_t checksum = mychecksum(buffer, sizeof(buffer));
+    // printf("calculated checksum: %d\n", checksum);
 
-    //   // Option 1: Discard the segment
-    //   continue;
-
-    //   // Option 2: Request retransmission
-    //   // myheadercreater(segment.header, 0, expected_seq, ACK);
-    //   // send(socket_fd, (void *)&segment, sizeof(segment), 0);
-    //   // continue;
-    // }
-
-    // Check if this is the last segment
-    /*if (segment.p_len < 1000) {
-      // This is the last segment, exit the loop
-      fwrite(segment.payload, sizeof(char), segment.p_len, file);
-      break;
-    }*/
-
-    // // Check the sequence number
-    // uint32_t received_seq = ntohl(segment.l4info.SeqNum);
-    // if (received_seq != expected_seq) {
-    //   // Request retransmission by sending an ACK with the expected sequence
-    //   // number
-    //   myheadercreater(segment.header, 0, expected_seq, ACK);
-    //   send(socket_fd, (void *)&segment, sizeof(segment), 0);
-    //   continue;
-    // }
-
-    recv(socket_fd, (void *)&segment, sizeof(segment), 0);
-    // Calculate checksum and verify integrity
-    fwrite(segment.payload, sizeof(char), segment.p_len, file);
-    // Extract the sequence number from the header and add 1000
-    // Extract the bytes from segment.header
-    uint8_t byte4 = segment.header[4];
-    uint8_t byte5 = segment.header[5];
-    uint8_t byte6 = segment.header[6];
-    uint8_t byte7 = segment.header[7];
-    // Reconstruct the sequence number
+    // get sequence number
+    uint8_t byte4 = header[4];
+    uint8_t byte5 = header[5];
+    uint8_t byte6 = header[6];
+    uint8_t byte7 = header[7];
     uint32_t seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
+
     // Add 1000 to the sequence number
     seq_num += 1000;
     printf("seq_num: %d\n", seq_num);
-    myheadercreater(segment.header, 124, seq_num, ACK, source_port);
-    send(socket_fd, (void *)&segment, sizeof(segment), 0);
+    fwrite(payload, sizeof(char), 1000, file);
+
+    char head[20];
+    myheadercreater(head, 124, seq_num, ACK, source_port);
+
+    // send only the header back
+    send(socket_fd, head, sizeof(head), 0);
   }
 
   fclose(file);

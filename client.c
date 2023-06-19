@@ -35,36 +35,28 @@ void myheadercreater(char *header, uint32_t seq, uint32_t ack, uint8_t flag,
   header[14] = byte14;
   header[15] = byte15;
 }
-
 typedef struct {
-  uint16_t source_port;
-  uint16_t dest_port;
-  uint32_t seq;
-  uint32_t ack;
-  uint8_t flag;
-  uint16_t win;
+  uint32_t source_ip;
+  uint32_t dest_ip;
+  uint16_t protocol;
+  uint16_t tcp_header_length;
 } PseudoHeader;
 
 void reconstructPseudoHeader(const char *header, PseudoHeader *pseudoHeader) {
   // Extract fields from the header
-  uint16_t source_port = (header[0] << 8) | header[1];
-  uint16_t dest_port = (header[2] << 8) | header[3];
-  uint32_t seq =
+  uint32_t source_ip =
+      (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
+  uint32_t dest_ip =
       (header[4] << 24) | (header[5] << 16) | (header[6] << 8) | header[7];
-  uint32_t ack =
-      (header[8] << 24) | (header[9] << 16) | (header[10] << 8) | header[11];
-  uint8_t flag = header[13];
-  uint16_t win = (header[14] << 8) | header[15];
+  uint16_t protocol = ACK;
+  uint16_t tcp_header_length = 20;
 
   // Set fields of the pseudo header
-  pseudoHeader->source_port = source_port;
-  pseudoHeader->dest_port = dest_port;
-  pseudoHeader->seq = seq;
-  pseudoHeader->ack = ack;
-  pseudoHeader->flag = flag;
-  pseudoHeader->win = win;
+  pseudoHeader->source_ip = source_ip;
+  pseudoHeader->dest_ip = dest_ip;
+  pseudoHeader->protocol = protocol;
+  pseudoHeader->tcp_header_length = tcp_header_length;
 }
-
 int main() {
   srand(time(NULL));
   uint16_t source_port = rand() % 65536;
@@ -154,21 +146,20 @@ int main() {
     char buffer[1024];
     PseudoHeader pseudoHeader;
     reconstructPseudoHeader(header, &pseudoHeader);
-
-    // Create pseudoheader array
     uint8_t pseudoheader[12];
-    pseudoheader[0] = pseudoHeader.source_port >> 8;
-    pseudoheader[1] = pseudoHeader.source_port;
-    pseudoheader[2] = pseudoHeader.dest_port >> 8;
-    pseudoheader[3] = pseudoHeader.dest_port;
-    pseudoheader[4] = pseudoHeader.seq >> 24;
-    pseudoheader[5] = pseudoHeader.seq >> 16;
-    pseudoheader[6] = pseudoHeader.seq >> 8;
-    pseudoheader[7] = pseudoHeader.seq;
-    pseudoheader[8] = pseudoHeader.ack >> 24;
-    pseudoheader[9] = pseudoHeader.ack >> 16;
-    pseudoheader[10] = pseudoHeader.ack >> 8;
-    pseudoheader[11] = pseudoHeader.ack;
+    pseudoheader[0] = pseudoHeader.source_ip >> 24;
+    pseudoheader[1] = pseudoHeader.source_ip >> 16;
+    pseudoheader[2] = pseudoHeader.source_ip >> 8;
+    pseudoheader[3] = pseudoHeader.source_ip;
+    pseudoheader[4] = pseudoHeader.dest_ip >> 24;
+    pseudoheader[5] = pseudoHeader.dest_ip >> 16;
+    pseudoheader[6] = pseudoHeader.dest_ip >> 8;
+    pseudoheader[7] = pseudoHeader.dest_ip;
+    pseudoheader[8] = 0;
+    pseudoheader[9] = pseudoHeader.protocol;
+    pseudoheader[10] = 0;
+    pseudoheader[11] = pseudoHeader.tcp_header_length;
+
     memcpy(buffer, header, sizeof(header)); // Copy the 20-byte header
     memcpy(buffer + sizeof(header), pseudoheader,
            sizeof(pseudoheader)); // Copy the pseudoheader

@@ -104,7 +104,7 @@ int main() {
   pseudoheader[11] = 20;
   // TASK 2 HERE---------------------------------------------------------
   while (1) {
-    char packet[1024]; // Buffer to hold the received packet (header + payload)
+    char packet[1020]; // Buffer to hold the received packet (header + payload)
 
     int bytes_received = recv(socket_fd, packet, sizeof(packet), 0);
     if (bytes_received == -1) {

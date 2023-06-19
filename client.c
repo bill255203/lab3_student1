@@ -103,19 +103,18 @@ int main() {
   pseudoheader[10] = 0;
   pseudoheader[11] = 20;
   // TASK 2 HERE---------------------------------------------------------
+  int first = 1;
   while (1) {
     char packet[1020]; // Buffer to hold the received packet (header + payload)
-
     int bytes_received = recv(socket_fd, packet, sizeof(packet), 0);
     if (bytes_received == -1) {
       perror("recv failed");
       exit(1);
     }
-
     char header[20];
     char payload[1000];
     int payload_length = bytes_received - sizeof(header);
-
+    printf("payload length:%d\n", payload_length);
     // Process the received packet
     if (bytes_received >= 20) {
       memcpy(header, packet, sizeof(header));
@@ -126,6 +125,8 @@ int main() {
     uint8_t byte17 = header[17] & 0xFF;
     uint16_t real_checksum = (byte16 << 8) | byte17;
     printf("real checksum: %d\n", real_checksum);
+    header[16] = 0;
+    header[17] = 0;
     // create a buffer to store and calculate checksum
     char buffer[1032];
     memcpy(buffer, header, sizeof(header)); // Copy the 20-byte header
@@ -133,23 +134,34 @@ int main() {
            sizeof(pseudoheader)); // Copy the pseudoheader
     memcpy(buffer + sizeof(header) + sizeof(pseudoheader), payload,
            payload_length); // Copy the payload
-
+                            // Set the remaining space to 0
+    memset(buffer + sizeof(header) + sizeof(pseudoheader) + payload_length, 0,
+           sizeof(buffer) - sizeof(header) - sizeof(pseudoheader) -
+               payload_length);
     uint16_t checksum = mychecksum(
         buffer, sizeof(header) + sizeof(pseudoheader) + payload_length);
     printf("calculated checksum: %d\n", checksum);
 
     // get sequence number
-    uint8_t byte4 = header[4];
-    uint8_t byte5 = header[5];
-    uint8_t byte6 = header[6];
-    uint8_t byte7 = header[7];
-    uint32_t seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
 
-    // Add 1000 to the sequence number
-    seq_num += payload_length;
-    printf("seq_num: %d\n", seq_num);
-    fwrite(payload, sizeof(char), payload_length, file);
-
+    uint32_t seq_num;
+    while (first) {
+      uint8_t byte4 = header[4];
+      uint8_t byte5 = header[5];
+      uint8_t byte6 = header[6];
+      uint8_t byte7 = header[7];
+      seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
+      first = 0;
+    }
+    if (checksum == real_checksum) {
+      // Add 1000 to the sequence number
+      seq_num += payload_length;
+      printf("seq_num: %d\n", seq_num);
+      fwrite(payload, sizeof(char), payload_length, file);
+    } else {
+      printf("seq_num: %d\n", seq_num);
+      printf("wrong info\n\n");
+    }
     char ack_header[20];
     myheadercreater(ack_header, 124, seq_num, ACK, source_port);
     send(socket_fd, ack_header, sizeof(ack_header), 0);

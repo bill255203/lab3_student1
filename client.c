@@ -157,7 +157,12 @@ int main() {
       // Add 1000 to the sequence number
       seq_num += payload_length;
       printf("seq_num: %d\n", seq_num);
-      fwrite(payload, sizeof(char), payload_length, file);
+      if (payload_length < 1000) {
+        fwrite(payload, sizeof(char), payload_length, file);
+        break; // Exit the loop since it's the last packet
+      } else {
+        fwrite(payload, sizeof(char), 1000, file);
+      }
     } else {
       printf("seq_num: %d\n", seq_num);
       printf("wrong info\n\n");

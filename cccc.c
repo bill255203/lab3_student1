@@ -1,4 +1,5 @@
 #include "header.h"
+
 void myheadercreater(char *header, uint32_t seq, uint32_t ack, uint8_t flag,
                      uint16_t source_port) {
   uint8_t byte0 = source_port >> 8;
@@ -34,9 +35,32 @@ void myheadercreater(char *header, uint32_t seq, uint32_t ack, uint8_t flag,
   header[14] = byte14;
   header[15] = byte15;
 }
+typedef struct {
+  uint32_t source_ip;
+  uint32_t dest_ip;
+  uint16_t protocol;
+  uint16_t tcp_header_length;
+} PseudoHeader;
+
+void reconstructPseudoHeader(const char *header, PseudoHeader *pseudoHeader) {
+  // Extract fields from the header
+  uint32_t source_ip =
+      (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
+  uint32_t dest_ip =
+      (header[4] << 24) | (header[5] << 16) | (header[6] << 8) | header[7];
+  uint16_t protocol = 124;
+  uint16_t tcp_header_length = 0x1C;
+
+  // Set fields of the pseudo header
+  pseudoHeader->source_ip = source_ip;
+  pseudoHeader->dest_ip = dest_ip;
+  pseudoHeader->protocol = protocol;
+  pseudoHeader->tcp_header_length = tcp_header_length;
+}
 int main() {
   srand(time(NULL));
   uint16_t source_port = rand() % 65536;
+
   /*---------------------------UDT SERVER----------------------------------*/
   srand(getpid());
   // Create socket.
@@ -82,41 +106,69 @@ int main() {
 
   myheadercreater(header, rev_ack, rev_seq + 1, ACK, source_port);
   send(socket_fd, (void *)header, sizeof(header), 0);
-  FILE *file = fopen("received image. jpg", "wb");
+  FILE *file = fopen("received image.jpg", "wb");
   if (file == NULL) {
     perror("Fail to open");
     exit(1);
   }
+
   // TASK 2 HERE---------------------------------------------------------
+  Segment segment;
   while (1) {
-    char packet[1020]; // Buffer to hold the received packet (header + payload)
+    char packet[1024]; // Buffer to hold the received packet (header + payload)
+
     int bytes_received = recv(socket_fd, packet, sizeof(packet), 0);
     if (bytes_received == -1) {
       perror("recv failed");
       exit(1);
     }
+
     char header[20];
     char payload[1000];
     int payload_length = bytes_received - sizeof(header);
+
+    // Process the received packet
     if (bytes_received >= 20) {
+      // Extract the header from the packet
       memcpy(header, packet, sizeof(header));
-      memcpy(payload, packet + sizeof(header), bytes_received - sizeof(header));
+
+      // Extract the payload from the packet
+      memcpy(payload, packet + sizeof(header), payload_length);
     }
+
     // get the real checksum
     uint8_t byte16 = header[16] & 0xFF;
     uint8_t byte17 = header[17] & 0xFF;
     uint16_t real_checksum = (byte16 << 8) | byte17;
-    printf("real check: %d\n", real_checksum);
+    printf("real checksum: %d\n", real_checksum);
 
     // create a buffer to store and calculate checksum
-    // char buffer[1032];
-    // memcpy(buffer, header, 20); // Copy the 20-byte header
-    // memcpy(buffer + 20, pseudoheader,
-    //        sizeof(pseudoheader)); // Copy the pseudoheader
-    // memcpy(buffer + 20 + sizeof(pseudoheader), payload,
-    //        payload_length); // Copy the payload
-    // uint16_t checksum = mychecksum(buffer, sizeof(buffer));
-    // printf("calculated checksum: %d\n", checksum);
+    char buffer[1024];
+    PseudoHeader pseudoHeader;
+    reconstructPseudoHeader(header, &pseudoHeader);
+    uint8_t pseudoheader[12];
+    pseudoheader[0] = pseudoHeader.source_ip >> 24;
+    pseudoheader[1] = pseudoHeader.source_ip >> 16;
+    pseudoheader[2] = pseudoHeader.source_ip >> 8;
+    pseudoheader[3] = pseudoHeader.source_ip;
+    pseudoheader[4] = pseudoHeader.dest_ip >> 24;
+    pseudoheader[5] = pseudoHeader.dest_ip >> 16;
+    pseudoheader[6] = pseudoHeader.dest_ip >> 8;
+    pseudoheader[7] = pseudoHeader.dest_ip;
+    pseudoheader[8] = 0;
+    pseudoheader[9] = pseudoHeader.protocol;
+    pseudoheader[10] = 0;
+    pseudoheader[11] = pseudoHeader.tcp_header_length;
+
+    memcpy(buffer, header, sizeof(header)); // Copy the 20-byte header
+    memcpy(buffer + sizeof(header), pseudoheader,
+           sizeof(pseudoheader)); // Copy the pseudoheader
+    memcpy(buffer + sizeof(header) + sizeof(pseudoheader), payload,
+           payload_length); // Copy the payload
+
+    uint16_t checksum = mychecksum(
+        buffer, sizeof(header) + sizeof(pseudoheader) + payload_length);
+    printf("calculated checksum: %d\n", checksum);
 
     // get sequence number
     uint8_t byte4 = header[4];
@@ -126,15 +178,15 @@ int main() {
     uint32_t seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
 
     // Add 1000 to the sequence number
-    seq_num += 1000;
+    seq_num += payload_length;
     printf("seq_num: %d\n", seq_num);
-    fwrite(payload, sizeof(char), 1000, file);
+    fwrite(payload, sizeof(char), payload_length, file);
 
-    char head[20];
-    myheadercreater(head, 124, seq_num, ACK, source_port);
+    char ack_header[20];
+    myheadercreater(ack_header, 124, seq_num, ACK, source_port);
 
     // send only the header back
-    send(socket_fd, head, sizeof(head), 0);
+    send(socket_fd, ack_header, sizeof(ack_header), 0);
   }
 
   fclose(file);
@@ -162,12 +214,16 @@ int main() {
   /*       3. The packet will only corrupt but not miss or be disordered.   */
   /*       4. Only the packets come from server may corrupt.(don't have to  */
   /*          worry that the ack sent by client will corrupt.)              */
-  /*       5. We offer mychecksum() for you to verify the checksum, and     */
-  /*          don't forget to verify pseudoheader part.                     */
-  /*       6. Once server finish transmit the file, it will close the       */
-  /*          client socket.                                                */
-  /*       7. You can adjust server by                                      */
-  /*          ./server {timeout duration} {corrupt probability}             */
+  /*       5. We offer mychecksum() for you to use to corrupt the packet.   */
   /*                                                                        */
+  /*       When you debug this lab, you should comment out the code in task */
+  /*       2, 3, 4.                                                        */
+  /*                                                                        */
+  /*       After you finish task 2, 3, 4, you should be able to run the code*/
+  /*       without the "segmentation fault" error.                          */
+  /*       It will generate a output.jpg same as server.                    */
+  /*                                                                        */
+  /*       Then you can start to write your code to complete task5 and task6*/
   /*-------------------------Something important----------------------------*/
+  return 0;
 }

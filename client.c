@@ -35,28 +35,6 @@ void myheadercreater(char *header, uint32_t seq, uint32_t ack, uint8_t flag,
   header[14] = byte14;
   header[15] = byte15;
 }
-typedef struct {
-  uint32_t source_ip;
-  uint32_t dest_ip;
-  uint16_t protocol;
-  uint16_t tcp_header_length;
-} PseudoHeader;
-
-void reconstructPseudoHeader(const char *header, PseudoHeader *pseudoHeader) {
-  // Extract fields from the header
-  uint32_t source_ip =
-      (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
-  uint32_t dest_ip =
-      (header[4] << 24) | (header[5] << 16) | (header[6] << 8) | header[7];
-  uint16_t protocol = ACK;
-  uint16_t tcp_header_length = 20;
-
-  // Set fields of the pseudo header
-  pseudoHeader->source_ip = source_ip;
-  pseudoHeader->dest_ip = dest_ip;
-  pseudoHeader->protocol = protocol;
-  pseudoHeader->tcp_header_length = tcp_header_length;
-}
 int main() {
   srand(time(NULL));
   uint16_t source_port = rand() % 65536;
@@ -111,9 +89,20 @@ int main() {
     perror("Fail to open");
     exit(1);
   }
-
+  char pseudoheader[12];
+  pseudoheader[0] = 127;
+  pseudoheader[1] = 0;
+  pseudoheader[2] = 0;
+  pseudoheader[3] = 1;
+  pseudoheader[4] = 127;
+  pseudoheader[5] = 0;
+  pseudoheader[6] = 0;
+  pseudoheader[7] = 1;
+  pseudoheader[8] = 0;
+  pseudoheader[9] = 6;
+  pseudoheader[10] = 0;
+  pseudoheader[11] = 20;
   // TASK 2 HERE---------------------------------------------------------
-  Segment segment;
   while (1) {
     char packet[1024]; // Buffer to hold the received packet (header + payload)
 
@@ -129,37 +118,16 @@ int main() {
 
     // Process the received packet
     if (bytes_received >= 20) {
-      // Extract the header from the packet
       memcpy(header, packet, sizeof(header));
-
-      // Extract the payload from the packet
       memcpy(payload, packet + sizeof(header), payload_length);
     }
-
     // get the real checksum
     uint8_t byte16 = header[16] & 0xFF;
     uint8_t byte17 = header[17] & 0xFF;
     uint16_t real_checksum = (byte16 << 8) | byte17;
     printf("real checksum: %d\n", real_checksum);
-
     // create a buffer to store and calculate checksum
-    char buffer[1024];
-    PseudoHeader pseudoHeader;
-    reconstructPseudoHeader(header, &pseudoHeader);
-    uint8_t pseudoheader[12];
-    pseudoheader[0] = pseudoHeader.source_ip >> 24;
-    pseudoheader[1] = pseudoHeader.source_ip >> 16;
-    pseudoheader[2] = pseudoHeader.source_ip >> 8;
-    pseudoheader[3] = pseudoHeader.source_ip;
-    pseudoheader[4] = pseudoHeader.dest_ip >> 24;
-    pseudoheader[5] = pseudoHeader.dest_ip >> 16;
-    pseudoheader[6] = pseudoHeader.dest_ip >> 8;
-    pseudoheader[7] = pseudoHeader.dest_ip;
-    pseudoheader[8] = 0;
-    pseudoheader[9] = pseudoHeader.protocol;
-    pseudoheader[10] = 0;
-    pseudoheader[11] = pseudoHeader.tcp_header_length;
-
+    char buffer[1032];
     memcpy(buffer, header, sizeof(header)); // Copy the 20-byte header
     memcpy(buffer + sizeof(header), pseudoheader,
            sizeof(pseudoheader)); // Copy the pseudoheader
@@ -184,8 +152,6 @@ int main() {
 
     char ack_header[20];
     myheadercreater(ack_header, 124, seq_num, ACK, source_port);
-
-    // send only the header back
     send(socket_fd, ack_header, sizeof(ack_header), 0);
   }
 

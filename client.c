@@ -104,6 +104,9 @@ int main() {
   pseudoheader[11] = 20;
   // TASK 2 HERE---------------------------------------------------------
   int first = 1;
+  int discard_packet = 0;
+  uint32_t expected_seq_num = 0;
+  int count = 0;
   while (1) {
     char packet[1020]; // Buffer to hold the received packet (header + payload)
     int bytes_received = recv(socket_fd, packet, sizeof(packet), 0);
@@ -152,26 +155,43 @@ int main() {
       uint8_t byte7 = header[7];
       seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
       first = 0;
+      expected_seq_num = seq_num;
     }
+
     if (checksum == real_checksum) {
-      // Add 1000 to the sequence number
-      seq_num += payload_length;
-      printf("seq_num: %d\n", seq_num);
-      if (payload_length < 1000) {
-        fwrite(payload, sizeof(char), payload_length, file);
-        break; // Exit the loop since it's the last packet
+      if (seq_num == expected_seq_num) {
+        if (!discard_packet) {
+          // Add 1000 to the sequence number
+          seq_num += payload_length;
+          printf("seq_num: %d\n", seq_num);
+          if (payload_length < 1000) {
+            fwrite(payload, sizeof(char), payload_length, file);
+            break; // Exit the loop since it's the last packet
+          } else {
+            fwrite(payload, sizeof(char), 1000, file);
+          }
+          expected_seq_num += 1000; // Update the expected sequence number
+        } else {
+          printf("Skipping packet %d due to previous corruption.\n", seq_num);
+          if (count % 10 == 0 && count != 0) {
+            discard_packet = 0; // Reset the flag
+          }
+          count += 1;
+        }
       } else {
-        fwrite(payload, sizeof(char), 1000, file);
+        printf("Received out-of-sequence packet. Expected seq_num: %d\n",
+               expected_seq_num);
+        discard_packet =
+            1; // Set the flag to true to discard subsequent packets
       }
     } else {
-      printf("seq_num: %d\n", seq_num);
-      printf("wrong info\n\n");
+      printf("Corrupted packet with seq_num: %d\n", seq_num);
+      discard_packet = 1; // Set the flag to true to discard subsequent packets
     }
     char ack_header[20];
     myheadercreater(ack_header, 124, seq_num, ACK, source_port);
     send(socket_fd, ack_header, sizeof(ack_header), 0);
   }
-
   fclose(file);
   // Wait
   /*----------------------------receive data--------------------------------*/

@@ -105,8 +105,7 @@ int main() {
   // TASK 2 HERE---------------------------------------------------------
   int first = 1;
   int discard_packet = 0;
-  uint32_t expected_seq_num = 0;
-  int count = 0;
+  uint32_t expected_seq_num;
   while (1) {
     char packet[1020]; // Buffer to hold the received packet (header + payload)
     int bytes_received = recv(socket_fd, packet, sizeof(packet), 0);
@@ -148,12 +147,13 @@ int main() {
     // get sequence number
 
     uint32_t seq_num;
+
+    uint8_t byte4 = header[4];
+    uint8_t byte5 = header[5];
+    uint8_t byte6 = header[6];
+    uint8_t byte7 = header[7];
+    seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
     while (first) {
-      uint8_t byte4 = header[4];
-      uint8_t byte5 = header[5];
-      uint8_t byte6 = header[6];
-      uint8_t byte7 = header[7];
-      seq_num = (byte4 << 24) | (byte5 << 16) | (byte6 << 8) | byte7;
       first = 0;
       expected_seq_num = seq_num;
     }
@@ -173,10 +173,8 @@ int main() {
           expected_seq_num += 1000; // Update the expected sequence number
         } else {
           printf("Skipping packet %d due to previous corruption.\n", seq_num);
-          if (count % 10 == 0 && count != 0) {
-            discard_packet = 0; // Reset the flag
-          }
-          count += 1;
+
+          discard_packet = 0; // Reset the flag
         }
       } else {
         printf("Received out-of-sequence packet. Expected seq_num: %d\n",
@@ -189,7 +187,7 @@ int main() {
       discard_packet = 1; // Set the flag to true to discard subsequent packets
     }
     char ack_header[20];
-    myheadercreater(ack_header, 124, seq_num, ACK, source_port);
+    myheadercreater(ack_header, 124, expected_seq_num, ACK, source_port);
     send(socket_fd, ack_header, sizeof(ack_header), 0);
   }
   fclose(file);
